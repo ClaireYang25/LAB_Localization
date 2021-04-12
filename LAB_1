@@ -1,0 +1,96 @@
+clearvars, clc, close all
+
+%%
+set(0,'DefaultTextFontsize', 22)
+set(0,'DefaultLineLineWidth',2)
+set(0,'DefaultTextInterpreter','latex')
+set(0,'DefaultAxesFontsize',16)
+
+%% 1.Define the localization scenario
+
+parameters.xmin = -100; % x坐标轴,unit is meter
+parameters.ymin = -100; % y**
+parameters.xmax = 100; % x坐标轴
+parameters.ymax = 100;
+
+% placing the APs (Access Points)
+parameters.numberOfAP = 4 ; %number of APs
+AP = generatePositionOfAP(parameters); %调用这个generatePositionOfAP函数
+
+%UE user position
+UE = [10,10];  %meter
+
+%plotting the scenario
+plotScenario(parameters,AP,UE)
+
+%%2.grid of evaluation points
+x = linspace(parameters.xmin , parameters.xmax , 1000); %100 is density of smaple poins
+y = linspace(parameters.ymin , parameters.ymax , 1000);
+
+%%3.likelihood computation
+parameters.sigmaTOA = 10; %[meter], standard deviation
+parameters.sigmaAOA =  deg2rad( 5 ); %rad/deg
+parameters.sigmaRSS = 5; %m
+parameters.sigmaTDOA = 10; %m 
+
+TYPE = 'AOA'; %This variable can be TOA（2D_circle）, AOA(a line with divergence),RSS,TDOA(椭圆)
+
+likelihood = zeros( parameters.numberOfAP , length(x), length(y) );
+
+
+for a = 1:parameters.numberOfAP
+
+     %compute the "real" measurement
+     switch TYPE %以下都是slides里measurement list的公式表达, （1,2）=（x,y),AP(a,xory)=a代表的是第a个AP
+         case 'TOA'
+             rho = sqrt ( sum ( [ UE - AP(a,:)].^2 , 2) ); %the 1st AP localization for TOA
+         case 'AOA'
+             rho = atan2( (UE(2) - AP(a,2)) , (UE(1) - AP(a,1)));
+         case 'RSS'
+         case 'TDOA'
+     end        
+             
+     for i = 1:length(x) %1 to evaluation number x over x axis 
+         for j = 1:length(y) %**** over y axis
+              switch TYPE
+                  case 'TOA' 
+                      likelihood(a,i,j) = evaluateLikelihoodTOA(parameters , rho , AP(a,:) , [x(i) , y(j)] );
+                  case 'AOA'
+                      likelihood(a,i,j) = evaluateLikelihoodAOA(parameters , rho , AP(a,:) , [x(i) , y(j)] );                      
+                  case 'RSS'
+                      likelihood(a,i,j) = evaluateLikelihoodRSS(parameters , rho , AP(a,:) , [x(i) , y(j)] );
+                  case 'TDOA'
+                      if a > 1
+                      likelihood(a,i,j) = evaluateLikelihoodTDOA(parameters , rho , AP(a,:) , [x(i) , y(j)] );
+                      end
+              end
+         end
+     end %for 语句实现selecte one x, one y,即selec the points
+end
+
+%% 4.plot likelihood for each AP
+plot2Dlikelihood(parameters, AP , UE, x, y , likelihood, TYPE)
+plot3Dlikelihood(parameters, AP , UE, x, y , likelihood, TYPE)
+
+%% 5.compute ML
+maximumLikeklihood = ones(length(x), length(y));
+
+for a = 1:parameters.numberOfAP
+    maximumLikeklihood = maximumLikeklihood .* squeeze(likelihood(a,:,:)); %squeeze means delete one demision 
+end
+
+maximumLikeklihood = maximumLikeklihood ./sum (sum(maximumLikeklihood));
+
+%plot ML
+plotMaximumlikelihood(parameters, AP , UE, x , y , maximumLikeklihood ,TYPE );
+
+
+%% 6. Evaluate UE position
+
+maxValue = max(maximumLikeklihood (:));
+[xhat yhat] = find(maximumLikeklihood  == maxValue);
+uhat(1 ,1) = x(xhat);
+uhat(1 ,2) = y(yhat);
+
+fprintf('The estimated UE position is [ %.3f %.3f] \n', uhat(1), uhat(2))
+
